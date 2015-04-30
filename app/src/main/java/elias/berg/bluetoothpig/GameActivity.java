@@ -11,7 +11,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Random;
@@ -30,36 +29,13 @@ public class GameActivity extends Activity
     private InputStream reader;
     private OutputStream writer;
 
-    private TextView mPlayername, mPlayerscore, mOpponentname, mOpponentscore;
+    private TextView mPlayername, mPlayerscore, mOpponentname, mOpponentscore, mRolledVal;
     private Button mRoll, mHold;
     private int score, turnScore;
 
     private Random die;
 
     private Thread playThread;
-
-    private final Handler mHandler = new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            byte[] readBuf;
-            String readMessage;
-            switch (msg.what) {
-                case READ_NAME:
-                    readBuf = (byte[]) msg.obj;
-                    // construct a string from the valid bytes in the buffer
-                    readMessage = new String(readBuf, 0, msg.arg1);
-                    mOpponentname.setText(readMessage);
-                    break;
-                case READ_SCORE:
-                    readBuf = (byte[]) msg.obj;
-                    // construct a string from the valid bytes in the buffer
-                    readMessage = new String(readBuf, 0, msg.arg1);
-                    mOpponentscore.setText(readMessage);
-                    setButtons(true);
-                    break;
-            }
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -81,6 +57,7 @@ public class GameActivity extends Activity
         mPlayerscore = (TextView) findViewById(R.id.playerscore);
         mOpponentname = (TextView) findViewById(R.id.opponentname);
         mOpponentscore = (TextView) findViewById(R.id.opponentscore);
+        mRolledVal = (TextView) findViewById(R.id.rolled);
 
         if ( BluetoothService.getName().contains("HOST: ") )
             BluetoothService.setName(BluetoothService.getName().substring(6));
@@ -121,41 +98,65 @@ public class GameActivity extends Activity
         playThread.start();
     }
 
+    /* Rolls the dice */
     private void roll()
     {
         int r = (die.nextInt(12) % 6) + 1;
         if ( r < 0 )
             r *= -1;
 
-        Toast.makeText(this, "Rolled: " + r, Toast.LENGTH_SHORT).show();
         if ( r == 1 )
         {
             turnScore = 0;
+            Toast.makeText(this, "Rolled a 1!", Toast.LENGTH_SHORT).show();
             hold();
         }
         else
             turnScore += r;
+
+        mRolledVal.setText(new Integer(turnScore).toString());
     }
 
+    /* Ends the player's turn */
     private void hold()
     {
         score += turnScore;
         turnScore = 0;
         mPlayerscore.setText(new Integer(score).toString());
+        mRolledVal.setText("0");
 
-        hold = true;
         setButtons(false);
+        hold = true;
     }
 
+    /* Activates the buttons according to whether it's the user's turn or not */
     private void setButtons(boolean b)
     {
         mRoll.setEnabled(b);
         mHold.setEnabled(b);
     }
 
+    /* End's the activity; game over */
+    private void endGame()
+    {
+        String msg;
+        if ( score >= 100 )
+            msg = "You won!";
+        else
+            msg = "You lost!";
 
+        try {
+            socket.close();
+            Log.e("", "End of game!");
+            Toast.makeText(this, "Game over! " + msg, Toast.LENGTH_SHORT).show();
+            Thread.sleep(1000);
+        } catch (Exception e) {
+            Log.e("", "Error ending game: " + e.getMessage());
+        }
+        finish();
+    }
 
-
+    /* The thread function that plays the actual game */
     private void playGame()
     {
         try {
@@ -175,29 +176,25 @@ public class GameActivity extends Activity
                 writer.write(BluetoothService.getName().getBytes());
 
                 bytes = reader.read(buffer);
-                mHandler.obtainMessage(READ_NAME, bytes, -1, buffer)
-                        .sendToTarget();
+                mHandler.obtainMessage(READ_NAME, bytes, -1, buffer).sendToTarget();
             }
             else
             {
                 Log.e("", "Getting name then sending name...");
                 bytes = reader.read(buffer);
-                mHandler.obtainMessage(READ_NAME, bytes, -1, buffer)
-                        .sendToTarget();
+                mHandler.obtainMessage(READ_NAME, bytes, -1, buffer).sendToTarget();
 
                 writer.write(BluetoothService.getName().getBytes());
             }
 
-            int opp = 0;
-            while ( score < 100 && opp < 100 )
+            /* THE ACTUAL GAME IS PLAYED HERE */
+            while ( score < 100 )
             {
                 if ( !turn )
                 {
                     buffer = new byte[1024];
                     bytes = reader.read(buffer);
-                    mHandler.obtainMessage(READ_SCORE, bytes, -1, buffer)
-                            .sendToTarget();
-                    opp = Integer.parseInt(mOpponentscore.getText().toString());
+                    mHandler.obtainMessage(READ_SCORE, bytes, -1, buffer).sendToTarget();
                     turn = true;
                 }
                 else if ( turn )
@@ -208,14 +205,38 @@ public class GameActivity extends Activity
                     turn = false;
                 }
             }
-            socket.close();
-            Thread.sleep(1000);
-            finish();
+            endGame();
 
         } catch (Exception e) {
-//            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             Log.e("", e.getMessage());
         }
     }
+
+    /* Handles messages sent from the opponent */
+    private final Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            byte[] readBuf;
+            String readMessage;
+            switch (msg.what) {
+                case READ_NAME:
+                    readBuf = (byte[]) msg.obj;
+                    // construct a string from the valid bytes in the buffer
+                    readMessage = new String(readBuf, 0, msg.arg1);
+                    mOpponentname.setText(readMessage);
+                    break;
+                case READ_SCORE:
+                    readBuf = (byte[]) msg.obj;
+                    // construct a string from the valid bytes in the buffer
+                    readMessage = new String(readBuf, 0, msg.arg1);
+                    mOpponentscore.setText(readMessage);
+                    setButtons(true);
+
+                    if ( Integer.parseInt(readMessage) >= 100 )
+                        endGame();
+                    break;
+            }
+        }
+    };
 
 }
