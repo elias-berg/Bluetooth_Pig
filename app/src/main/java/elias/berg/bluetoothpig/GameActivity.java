@@ -136,26 +136,6 @@ public class GameActivity extends Activity
         mHold.setEnabled(b);
     }
 
-    /* End's the activity; game over */
-    private void endGame()
-    {
-        String msg;
-        if ( score >= 100 )
-            msg = "You won!";
-        else
-            msg = "You lost!";
-
-        try {
-            socket.close();
-            Log.e("", "End of game!");
-            Toast.makeText(this, "Game over! " + msg, Toast.LENGTH_SHORT).show();
-            Thread.sleep(1000);
-        } catch (Exception e) {
-            Log.e("", "Error ending game: " + e.getMessage());
-        }
-        finish();
-    }
-
     /* The thread function that plays the actual game */
     private void playGame()
     {
@@ -205,10 +185,29 @@ public class GameActivity extends Activity
                     turn = false;
                 }
             }
-            endGame();
 
         } catch (Exception e) {
             Log.e("", e.getMessage());
+        } finally {
+            finish();
+        }
+    }
+
+    protected void onDestroy()
+    {
+        String msg;
+        if ( score >= 100 )
+            msg = "You won!";
+        else
+            msg = "You lost!";
+        Toast.makeText(this, "Game over! " + msg, Toast.LENGTH_SHORT).show();
+        Log.e("", "End of game!");
+
+        try {
+            socket.close();
+            Thread.sleep(1000);
+        } catch (Exception e) {
+            Log.e("", "Error ending game: " + e.getMessage());
         }
     }
 
